@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Manager;
 
 use App\Http\Controllers\Controller;
+use App\Mail\InvoiceDocumentMail;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Lease;
@@ -11,9 +12,13 @@ use App\Models\Transaction;
 use App\Models\TransactionEntry;
 use App\Models\Account;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class InvoiceController extends Controller
@@ -55,6 +60,8 @@ class InvoiceController extends Controller
             'status'           => $inv->status,
             'tenant'           => $inv->tenant->full_name ?? 'N/A',
             'unit'             => $inv->lease->unit->unit_number ?? 'N/A',
+            'period_start_raw' => $inv->period_start->format('Y-m-d'),
+            'period_end_raw'   => $inv->period_end->format('Y-m-d'),
             'period_start'     => $inv->period_start->format('M d, Y'),
             'period_end'       => $inv->period_end->format('M d, Y'),
             'billing_months'   => $inv->billing_months,
@@ -82,6 +89,7 @@ class InvoiceController extends Controller
                 'deposit_amount'       => (float) $l->deposit_amount,
                 'rent_currency'        => $l->rent_currency ?? 'TZS',
                 'billing_cycle_months' => $l->billing_cycle_months ?? 3,
+                'start_date'           => $l->start_date?->format('Y-m-d'),
                 'fitout_applicable'    => $l->fitout_applicable,
                 'fitout_start_date'    => $l->fitout_start_date ? $l->fitout_start_date->format('Y-m-d') : null,
                 'fitout_end_date'      => $l->fitout_end_date ? $l->fitout_end_date->format('Y-m-d') : null,
@@ -228,18 +236,10 @@ class InvoiceController extends Controller
         $fitoutStart = $lease->fitout_start_date;
         $fitoutEnd = $lease->fitout_end_date;
 
-        DB::transaction(function () use ($validated, $building, $lease, $user, $billingMonths, $periodStart, $periodEnd, $fitoutApplicable, $fitoutStart, $fitoutEnd) {
+        $invoice = DB::transaction(function () use ($validated, $building, $lease, $user, $billingMonths, $periodStart, $periodEnd, $fitoutApplicable, $fitoutStart, $fitoutEnd) {
             $type = $validated['type'];
 
-            // Generate numbers
-            $invoiceNumber  = Invoice::nextNumber($building->id, Invoice::TYPE_INVOICE);
-            $proformaNumber = $type === Invoice::TYPE_PROFORMA
-                ? Invoice::nextNumber($building->id, Invoice::TYPE_PROFORMA)
-                : null;
-
-            $invoice = Invoice::create([
-                'invoice_number'      => $type === Invoice::TYPE_INVOICE ? $invoiceNumber : 'DRAFT-' . uniqid(),
-                'proforma_number'     => $proformaNumber,
+            $invoice = $this->createWithUniqueNumbers($building->id, $type, [
                 'building_id'         => $building->id,
                 'lease_id'            => $lease->id,
                 'tenant_id'           => $lease->tenant_id,
@@ -258,15 +258,6 @@ class InvoiceController extends Controller
                 'notes'               => $validated['notes'] ?? null,
                 'created_by'          => $user->id,
             ]);
-
-            // If it's an invoice type, set proper invoice_number
-            if ($type === Invoice::TYPE_INVOICE) {
-                $invoice->update(['invoice_number' => $invoiceNumber]);
-            }
-            // If proforma, use a temp invoice_number (will be replaced on conversion)
-            if ($type === Invoice::TYPE_PROFORMA) {
-                $invoice->update(['invoice_number' => 'PF-TEMP-' . $invoice->id]);
-            }
 
             $serviceChargeRate = $validated['service_charge_rate'];
             $monthlyRent = (float) $lease->monthly_rent;
@@ -450,10 +441,109 @@ class InvoiceController extends Controller
                     ]);
                 }
             }
+
+            return $invoice;
         });
 
+        $invoice->loadMissing(['tenant', 'lease.unit', 'building']);
+        $emailOutcome = $this->sendDocumentEmailToTenant($invoice);
+
+        $message = ($validated['type'] === 'proforma' ? 'Proforma' : 'Invoice') . ' created successfully.';
+        if ($emailOutcome === 'sent') {
+            $message .= ' Email sent to tenant.';
+            return redirect()->route('manager.invoices.index')->with('success', $message);
+        }
+
+        if ($emailOutcome === 'no-email') {
+            return redirect()->route('manager.invoices.index')
+                ->with('success', $message)
+                ->with('warning', 'Tenant has no email address. Document was created but not emailed.');
+        }
+
         return redirect()->route('manager.invoices.index')
-            ->with('success', ($validated['type'] === 'proforma' ? 'Proforma' : 'Invoice') . ' created successfully.');
+            ->with('success', $message)
+            ->with('warning', 'Document was created but email delivery failed. Please retry from your mail setup.');
+    }
+
+    /**
+     * Create invoice/proforma records with collision-safe numbering.
+     */
+    private function createWithUniqueNumbers(int $buildingId, string $type, array $attributes): Invoice
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            if ($type === Invoice::TYPE_PROFORMA) {
+                $attributes['proforma_number'] = Invoice::nextNumber($buildingId, Invoice::TYPE_PROFORMA);
+                $attributes['invoice_number'] = 'PF-TEMP-' . Str::uuid();
+            } else {
+                $attributes['invoice_number'] = Invoice::nextNumber($buildingId, Invoice::TYPE_INVOICE);
+                $attributes['proforma_number'] = null;
+            }
+
+            try {
+                return Invoice::create($attributes);
+            } catch (UniqueConstraintViolationException $e) {
+                if ($attempt === 4) {
+                    throw $e;
+                }
+            }
+        }
+
+        throw new \RuntimeException('Failed to generate a unique invoice number.');
+    }
+
+    /**
+     * Send invoice/proforma email to tenant.
+     *
+     * @return 'sent'|'no-email'|'failed'
+     */
+    private function sendDocumentEmailToTenant(Invoice $invoice): string
+    {
+        $email = $invoice->tenant?->email;
+        $documentNumber = $invoice->type === Invoice::TYPE_PROFORMA
+            ? ($invoice->proforma_number ?: $invoice->invoice_number)
+            : $invoice->invoice_number;
+
+        if (empty($email)) {
+            Log::info('Invoice email skipped: tenant has no email', [
+                'invoice_id' => $invoice->id,
+                'document_type' => $invoice->type,
+                'document_number' => $documentNumber,
+                'building_id' => $invoice->building_id,
+                'tenant_id' => $invoice->tenant_id,
+                'status' => 'no-email',
+            ]);
+
+            return 'no-email';
+        }
+
+        try {
+            Mail::to($email)->send(new InvoiceDocumentMail($invoice));
+
+            Log::info('Invoice email sent', [
+                'invoice_id' => $invoice->id,
+                'document_type' => $invoice->type,
+                'document_number' => $documentNumber,
+                'building_id' => $invoice->building_id,
+                'tenant_id' => $invoice->tenant_id,
+                'tenant_email' => $email,
+                'status' => 'sent',
+            ]);
+
+            return 'sent';
+        } catch (\Throwable $e) {
+            Log::warning('Invoice email delivery failed', [
+                'invoice_id' => $invoice->id,
+                'document_type' => $invoice->type,
+                'document_number' => $documentNumber,
+                'building_id' => $invoice->building_id,
+                'tenant_id' => $invoice->tenant_id,
+                'tenant_email' => $email,
+                'status' => 'failed',
+                'error' => $e->getMessage(),
+            ]);
+
+            return 'failed';
+        }
     }
 
     /* ================================================================
@@ -473,8 +563,23 @@ class InvoiceController extends Controller
             'converted_at'   => now(),
         ]);
 
+        $invoice->loadMissing(['tenant', 'lease.unit', 'building']);
+        $emailOutcome = $this->sendDocumentEmailToTenant($invoice);
+
+        if ($emailOutcome === 'sent') {
+            return redirect()->route('manager.invoices.show', $invoice)
+                ->with('success', "Converted to Invoice {$invoiceNumber} and emailed to tenant.");
+        }
+
+        if ($emailOutcome === 'no-email') {
+            return redirect()->route('manager.invoices.show', $invoice)
+                ->with('success', "Converted to Invoice {$invoiceNumber}.")
+                ->with('warning', 'Tenant has no email address. Invoice was converted but not emailed.');
+        }
+
         return redirect()->route('manager.invoices.show', $invoice)
-            ->with('success', "Converted to Invoice {$invoiceNumber}.");
+            ->with('success', "Converted to Invoice {$invoiceNumber}.")
+            ->with('warning', 'Invoice was converted but email delivery failed.');
     }
 
     /* ================================================================
@@ -484,11 +589,25 @@ class InvoiceController extends Controller
     {
         $building = Auth::user()->getBuilding();
         abort_unless($invoice->building_id === $building->id, 403);
-        abort_unless(in_array($invoice->status, ['draft']), 422, 'Only draft invoices can be sent.');
+        abort_unless($invoice->isInvoice(), 422, 'Only invoices can be sent.');
+        abort_unless(!in_array($invoice->status, ['cancelled']), 422, 'Cancelled invoices cannot be sent.');
 
-        $invoice->update(['status' => Invoice::STATUS_SENT]);
+        $invoice->loadMissing(['tenant', 'lease.unit', 'building']);
+        $emailOutcome = $this->sendDocumentEmailToTenant($invoice);
 
-        return back()->with('success', 'Invoice marked as sent.');
+        if ($invoice->status === Invoice::STATUS_DRAFT) {
+            $invoice->update(['status' => Invoice::STATUS_SENT]);
+        }
+
+        if ($emailOutcome === 'sent') {
+            return back()->with('success', 'Invoice emailed to tenant successfully.');
+        }
+
+        if ($emailOutcome === 'no-email') {
+            return back()->with('warning', 'Tenant has no email address. Invoice status was updated but no email was sent.');
+        }
+
+        return back()->with('warning', 'Invoice status was updated, but email delivery failed. Please try again.');
     }
 
     /* ================================================================

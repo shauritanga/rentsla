@@ -28,6 +28,8 @@ interface Invoice {
     status: string;
     tenant: string;
     unit: string;
+    period_start_raw?: string;
+    period_end_raw?: string;
     period_start: string;
     period_end: string;
     billing_months: number;
@@ -107,6 +109,13 @@ export default function Invoices({
     stats,
     filters,
 }: Props) {
+    const today = new Date().toISOString().split("T")[0];
+    const defaultDueDate = (() => {
+        const due = new Date();
+        due.setDate(due.getDate() + 7);
+        return due.toISOString().split("T")[0];
+    })();
+
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [search, setSearch] = useState(filters.search);
     const [filterType, setFilterType] = useState(filters.type);
@@ -119,8 +128,8 @@ export default function Invoices({
         lease_id: "",
         type: "invoice" as "proforma" | "invoice",
         billing_months: "3",
-        issue_date: new Date().toISOString().split("T")[0],
-        due_date: "",
+        issue_date: today,
+        due_date: defaultDueDate,
         period_start: "",
         service_charge_rate: "5",
         withholding_tax_rate: "10",
@@ -169,6 +178,11 @@ export default function Invoices({
 
     function openCreate() {
         createForm.reset();
+        createForm.setData((data) => ({
+            ...data,
+            issue_date: today,
+            due_date: defaultDueDate,
+        }));
         createForm.clearErrors();
         setAdditionalItems([]);
         setShowCreateModal(true);
@@ -194,13 +208,23 @@ export default function Invoices({
                     (inv) =>
                         inv.tenant === lease.tenant && inv.unit === lease.unit,
                 )
-                .sort((a, b) => (a.period_end < b.period_end ? 1 : -1));
+                .sort((a, b) => {
+                    const aEnd = a.period_end_raw ?? "";
+                    const bEnd = b.period_end_raw ?? "";
+                    if (aEnd === bEnd) return 0;
+                    return aEnd < bEnd ? 1 : -1;
+                });
             console.log("[onLeaseChange] leaseInvoices:", leaseInvoices);
 
             let nextPeriodStart = "";
-            if (leaseInvoices.length > 0 && leaseInvoices[0].period_end) {
+            if (
+                leaseInvoices.length > 0 &&
+                (leaseInvoices[0].period_end_raw || leaseInvoices[0].period_end)
+            ) {
                 // Set to the day after the last invoice's period_end
-                const lastEnd = new Date(leaseInvoices[0].period_end);
+                const lastEnd = leaseInvoices[0].period_end_raw
+                    ? new Date(`${leaseInvoices[0].period_end_raw}T00:00:00`)
+                    : new Date(leaseInvoices[0].period_end);
                 lastEnd.setDate(lastEnd.getDate() + 1);
                 nextPeriodStart = lastEnd.toISOString().split("T")[0];
             } else if (lease.fitout_applicable && lease.fitout_end_date) {

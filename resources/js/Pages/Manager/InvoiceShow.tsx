@@ -154,7 +154,9 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
         invoice.type === "invoice" &&
         !["paid", "cancelled"].includes(invoice.status);
     const canConvert = invoice.type === "proforma";
-    const canSend = invoice.status === "draft" && invoice.type === "invoice";
+    const canSend =
+        invoice.type === "invoice" &&
+        ["draft", "sent", "partial", "overdue"].includes(invoice.status);
     const canCancel = !["paid", "cancelled"].includes(invoice.status);
 
     return (
@@ -216,7 +218,9 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
                             onClick={handleSend}
                             className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition"
                         >
-                            Mark as Sent
+                            {invoice.status === "draft"
+                                ? "Send to Tenant"
+                                : "Resend to Tenant"}
                         </button>
                     )}
                     {canRecordPayment && (

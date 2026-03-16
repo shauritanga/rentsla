@@ -120,18 +120,22 @@ class Invoice extends Model
         $year   = now()->year;
         $column = $type === self::TYPE_PROFORMA ? 'proforma_number' : 'invoice_number';
 
-        $last = static::where('building_id', $buildingId)
+        // Numbering must be globally unique because both columns are globally unique in DB.
+        // Building scope is intentionally ignored here to avoid cross-building collisions.
+        $candidates = static::query()
             ->where($column, 'like', "{$prefix}-{$year}-%")
-            ->orderByDesc($column)
-            ->value($column);
+            ->pluck($column);
 
-        $seq = 1;
-        if ($last) {
-            $parts = explode('-', $last);
-            $seq   = ((int) end($parts)) + 1;
+        $maxSeq = 0;
+        $pattern = '/^' . preg_quote($prefix, '/') . '-' . $year . '-(\d+)$/';
+
+        foreach ($candidates as $value) {
+            if (is_string($value) && preg_match($pattern, $value, $matches)) {
+                $maxSeq = max($maxSeq, (int) $matches[1]);
+            }
         }
 
-        return sprintf('%s-%d-%04d', $prefix, $year, $seq);
+        return sprintf('%s-%d-%04d', $prefix, $year, $maxSeq + 1);
     }
 
     /* ── Relationships ────────────────────────────────────────── */

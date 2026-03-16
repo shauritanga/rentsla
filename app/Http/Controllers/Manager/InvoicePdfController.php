@@ -16,7 +16,10 @@ class InvoicePdfController extends Controller
         abort_unless($invoice->building_id === $building->id, 403);
         $invoice->load(['lease.unit', 'tenant', 'items', 'payments', 'creator']);
         $pdf = Pdf::loadView('pdf.invoice', ['invoice' => $invoice, 'building' => $building]);
-        $filename = ($invoice->type === 'proforma' ? 'Proforma' : 'Invoice') . "_{$invoice->invoice_number}.pdf";
+        $documentNumber = $invoice->type === 'proforma'
+            ? ($invoice->proforma_number ?: $invoice->invoice_number)
+            : $invoice->invoice_number;
+        $filename = ($invoice->type === 'proforma' ? 'Proforma' : 'Invoice') . "_{$documentNumber}.pdf";
         return $pdf->download($filename);
     }
 }
