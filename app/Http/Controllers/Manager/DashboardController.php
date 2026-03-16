@@ -13,8 +13,8 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $totalFloors = $building->floors()->count();
         $totalUnits = $building->units()->count();

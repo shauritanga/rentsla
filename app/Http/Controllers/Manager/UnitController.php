@@ -12,8 +12,8 @@ class UnitController extends Controller
 {
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $query = $building->units()
             ->with(['floor:id,name,sequence', 'activeLease.tenant:id,full_name']);
@@ -67,7 +67,7 @@ class UnitController extends Controller
 
     public function store(Request $request)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         $validated = $request->validate([
             'unit_number' => ['required', 'string', 'max:50'],
@@ -106,7 +106,7 @@ class UnitController extends Controller
 
     public function update(Request $request, Unit $unit)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         if ($unit->building_id !== $building->id) {
             abort(403);
@@ -147,7 +147,7 @@ class UnitController extends Controller
 
     public function destroy(Unit $unit)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         if ($unit->building_id !== $building->id) {
             abort(403);

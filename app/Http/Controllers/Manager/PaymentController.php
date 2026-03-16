@@ -13,8 +13,8 @@ class PaymentController extends Controller
 {
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $query = Payment::where('building_id', $building->id)
             ->with([
@@ -91,7 +91,7 @@ class PaymentController extends Controller
 
     public function store(Request $request)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         $validated = $request->validate([
             'lease_id' => ['required', 'exists:leases,id'],

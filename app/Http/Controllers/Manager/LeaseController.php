@@ -20,8 +20,8 @@ class LeaseController extends Controller
 {
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $query = $building->leases()
             ->with([
@@ -166,8 +166,8 @@ class LeaseController extends Controller
 
     public function show(Lease $lease)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($lease->building_id !== $building->id) {
             abort(403);
@@ -270,8 +270,8 @@ class LeaseController extends Controller
 
     public function store(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $validated = $request->validate([
             'unit_id' => ['required', 'exists:units,id'],
@@ -366,8 +366,8 @@ class LeaseController extends Controller
 
     public function approve(Request $request, Lease $lease)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($lease->building_id !== $building->id) {
             abort(403);
@@ -429,8 +429,8 @@ class LeaseController extends Controller
 
     public function reject(Request $request, Lease $lease)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($lease->building_id !== $building->id) {
             abort(403);
@@ -492,8 +492,8 @@ class LeaseController extends Controller
 
     public function requestAmendment(Request $request, Lease $lease)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($lease->building_id !== $building->id) {
             abort(403);
@@ -539,8 +539,8 @@ class LeaseController extends Controller
 
     public function approveAmendment(Request $request, LeaseAmendment $amendment)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($amendment->lease->building_id !== $building->id) {
             abort(403);
@@ -578,8 +578,8 @@ class LeaseController extends Controller
 
     public function rejectAmendment(Request $request, LeaseAmendment $amendment)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($amendment->lease->building_id !== $building->id) {
             abort(403);
@@ -610,7 +610,7 @@ class LeaseController extends Controller
 
     public function update(Request $request, Lease $lease)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         if ($lease->building_id !== $building->id) {
             abort(403);
@@ -646,8 +646,8 @@ class LeaseController extends Controller
     /* ------------------------------------------------------------------ */
     public function statuses(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $leases = $building->leases()
             ->select('id', 'status', 'updated_at')
@@ -666,7 +666,7 @@ class LeaseController extends Controller
     /* ------------------------------------------------------------------ */
     public function notifications(Request $request)
     {
-        $user = Auth::user();
+        $user = $this->getUser();
 
         $notifications = $user->unreadNotifications()
             ->whereIn('type', [
@@ -688,7 +688,7 @@ class LeaseController extends Controller
 
     public function markNotificationRead(Request $request, string $notificationId)
     {
-        $user = Auth::user();
+        $user = $this->getUser();
         $notification = $user->notifications()->find($notificationId);
         if ($notification) {
             $notification->markAsRead();
@@ -698,7 +698,7 @@ class LeaseController extends Controller
 
     public function markAllNotificationsRead(Request $request)
     {
-        $user = Auth::user();
+        $user = $this->getUser();
         $user->unreadNotifications()->update(['read_at' => now()]);
         return response()->json(['ok' => true]);
     }

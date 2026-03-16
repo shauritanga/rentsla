@@ -28,8 +28,8 @@ class StaffController extends Controller
 
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $assignableRoles = $this->getAssignableRoles($building->id);
         $assignableRoleIds = $assignableRoles->pluck('id')->toArray();
@@ -115,8 +115,8 @@ class StaffController extends Controller
 
     public function store(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         // Check if a soft-deleted user exists with this email
         $trashedUser = User::onlyTrashed()->where('email', $request->input('email'))->first();
@@ -175,8 +175,8 @@ class StaffController extends Controller
 
     public function update(Request $request, User $staff)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $assignableRoleIds = $this->getAssignableRoles($building->id)->pluck('id')->toArray();
 
@@ -228,8 +228,8 @@ class StaffController extends Controller
 
     public function destroy(User $staff)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $assignableRoleIds = $this->getAssignableRoles($building->id)->pluck('id')->toArray();
 

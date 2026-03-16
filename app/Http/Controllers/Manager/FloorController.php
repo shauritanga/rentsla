@@ -12,8 +12,8 @@ class FloorController extends Controller
 {
     public function index()
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $floors = $building->floors()
             ->withCount([
@@ -44,7 +44,7 @@ class FloorController extends Controller
 
     public function store(Request $request)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -70,7 +70,7 @@ class FloorController extends Controller
 
     public function update(Request $request, Floor $floor)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         if ($floor->building_id !== $building->id) {
             abort(403);
@@ -98,7 +98,7 @@ class FloorController extends Controller
 
     public function destroy(Floor $floor)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         if ($floor->building_id !== $building->id) {
             abort(403);

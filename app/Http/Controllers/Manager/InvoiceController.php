@@ -28,8 +28,8 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function index(Request $request)
     {
-        $user     = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $query = Invoice::where('building_id', $building->id)
             ->with(['lease.unit:id,unit_number', 'tenant:id,full_name,tin_number', 'creator:id,name']);
@@ -126,8 +126,8 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function show(Invoice $invoice)
     {
-        $user     = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         abort_unless($invoice->building_id === $building->id, 403);
 
@@ -204,12 +204,13 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function store(Request $request)
     {
-        $user     = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $validated = $request->validate([
             'lease_id'               => ['required', 'exists:leases,id'],
             'type'                   => ['required', 'in:proforma,invoice'],
+            'submission_action'      => ['nullable', 'in:save,send'],
             'billing_months'         => ['required', 'integer', 'in:3,4,6,12'],
             'issue_date'             => ['required', 'date'],
             'due_date'               => ['required', 'date', 'after_or_equal:issue_date'],
@@ -223,11 +224,24 @@ class InvoiceController extends Controller
             'additional_items.*.item_type'   => ['nullable', 'string', 'in:deposit,penalty,other'],
         ]);
 
+        $submissionAction = $validated['submission_action'] ?? 'save';
+        $shouldSend = $submissionAction === 'send';
+
         // Verify lease belongs to building and is active
         $lease = $building->leases()->where('status', 'active')->findOrFail($validated['lease_id']);
 
         $billingMonths = (int) $validated['billing_months'];
         $periodStart   = Carbon::parse($validated['period_start']);
+
+        // For the first billing document on a fit-out lease, always start the period at fit-out start.
+        $isFirstLeaseDocument = !Invoice::where('building_id', $building->id)
+            ->where('lease_id', $lease->id)
+            ->exists();
+
+        if ($isFirstLeaseDocument && $lease->fitout_applicable && $lease->fitout_start_date) {
+            $periodStart = $lease->fitout_start_date->copy()->startOfDay();
+        }
+
         $periodEnd     = $periodStart->copy()->addMonths($billingMonths)->subDay();
 
 
@@ -236,7 +250,7 @@ class InvoiceController extends Controller
         $fitoutStart = $lease->fitout_start_date;
         $fitoutEnd = $lease->fitout_end_date;
 
-        $invoice = DB::transaction(function () use ($validated, $building, $lease, $user, $billingMonths, $periodStart, $periodEnd, $fitoutApplicable, $fitoutStart, $fitoutEnd) {
+        $invoice = DB::transaction(function () use ($validated, $building, $lease, $user, $billingMonths, $periodStart, $periodEnd, $fitoutApplicable, $fitoutStart, $fitoutEnd, $shouldSend) {
             $type = $validated['type'];
 
             $invoice = $this->createWithUniqueNumbers($building->id, $type, [
@@ -244,7 +258,7 @@ class InvoiceController extends Controller
                 'lease_id'            => $lease->id,
                 'tenant_id'           => $lease->tenant_id,
                 'type'                => $type,
-                'status'              => Invoice::STATUS_DRAFT,
+                'status'              => $shouldSend ? Invoice::STATUS_SENT : Invoice::STATUS_DRAFT,
                 'billing_months'      => $billingMonths,
                 'issue_date'          => $validated['issue_date'],
                 'due_date'            => $validated['due_date'],
@@ -445,24 +459,30 @@ class InvoiceController extends Controller
             return $invoice;
         });
 
+        $documentLabel = $validated['type'] === 'proforma' ? 'Proforma' : 'Invoice';
+
+        if (!$shouldSend) {
+            return redirect()->route('manager.invoices.index')
+                ->with('success', "{$documentLabel} saved as draft.");
+        }
+
         $invoice->loadMissing(['tenant', 'lease.unit', 'building']);
         $emailOutcome = $this->sendDocumentEmailToTenant($invoice);
 
-        $message = ($validated['type'] === 'proforma' ? 'Proforma' : 'Invoice') . ' created successfully.';
         if ($emailOutcome === 'sent') {
-            $message .= ' Email sent to tenant.';
-            return redirect()->route('manager.invoices.index')->with('success', $message);
+            return redirect()->route('manager.invoices.index')
+                ->with('success', "{$documentLabel} sent successfully. Email delivered to tenant.");
         }
 
         if ($emailOutcome === 'no-email') {
             return redirect()->route('manager.invoices.index')
-                ->with('success', $message)
-                ->with('warning', 'Tenant has no email address. Document was created but not emailed.');
+                ->with('success', "{$documentLabel} marked as sent.")
+                ->with('warning', 'Tenant has no email address. Document was marked as sent but email could not be delivered.');
         }
 
         return redirect()->route('manager.invoices.index')
-            ->with('success', $message)
-            ->with('warning', 'Document was created but email delivery failed. Please retry from your mail setup.');
+            ->with('success', "{$documentLabel} marked as sent.")
+            ->with('warning', 'Email delivery failed. Please retry from the document actions menu.');
     }
 
     /**
@@ -551,7 +571,7 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function convert(Invoice $invoice)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
         abort_unless($invoice->building_id === $building->id, 403);
         abort_unless($invoice->isProforma(), 422, 'Only proformas can be converted.');
 
@@ -587,10 +607,16 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function send(Invoice $invoice)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
         abort_unless($invoice->building_id === $building->id, 403);
-        abort_unless($invoice->isInvoice(), 422, 'Only invoices can be sent.');
-        abort_unless(!in_array($invoice->status, ['cancelled']), 422, 'Cancelled invoices cannot be sent.');
+        abort_unless(
+            in_array($invoice->status, [Invoice::STATUS_DRAFT, Invoice::STATUS_SENT], true),
+            422,
+            'Only draft or sent documents can be sent/resend.'
+        );
+
+        $documentLabel = $invoice->isProforma() ? 'Proforma' : 'Invoice';
+        $isResend = $invoice->status === Invoice::STATUS_SENT;
 
         $invoice->loadMissing(['tenant', 'lease.unit', 'building']);
         $emailOutcome = $this->sendDocumentEmailToTenant($invoice);
@@ -600,14 +626,16 @@ class InvoiceController extends Controller
         }
 
         if ($emailOutcome === 'sent') {
-            return back()->with('success', 'Invoice emailed to tenant successfully.');
+            return back()->with('success', $isResend
+                ? "{$documentLabel} resent to tenant successfully."
+                : "{$documentLabel} sent to tenant successfully.");
         }
 
         if ($emailOutcome === 'no-email') {
-            return back()->with('warning', 'Tenant has no email address. Invoice status was updated but no email was sent.');
+            return back()->with('warning', "Tenant has no email address. {$documentLabel} status was updated but no email was sent.");
         }
 
-        return back()->with('warning', 'Invoice status was updated, but email delivery failed. Please try again.');
+        return back()->with('warning', "{$documentLabel} status was updated, but email delivery failed. Please try again.");
     }
 
     /* ================================================================
@@ -615,7 +643,7 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function cancel(Invoice $invoice)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
         abort_unless($invoice->building_id === $building->id, 403);
         abort_unless(!in_array($invoice->status, ['paid', 'cancelled']), 422, 'Cannot cancel this invoice.');
 
@@ -629,8 +657,8 @@ class InvoiceController extends Controller
      * ================================================================ */
     public function recordPayment(Request $request, Invoice $invoice)
     {
-        $user     = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         abort_unless($invoice->building_id === $building->id, 403);
         abort_unless($invoice->isInvoice(), 422, 'Payments can only be recorded against invoices.');

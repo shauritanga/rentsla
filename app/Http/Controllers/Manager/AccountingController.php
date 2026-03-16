@@ -11,7 +11,7 @@ class AccountingController extends Controller
     public function accounts(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/Accounts', [
             'title' => 'Chart of Accounts',
             'user' => [
@@ -30,7 +30,7 @@ class AccountingController extends Controller
     public function ledger(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/Ledger', [
             'title' => 'General Ledger',
             'user' => [
@@ -49,7 +49,7 @@ class AccountingController extends Controller
     public function reports(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/Reports', [
             'title' => 'Accounting Reports',
             'user' => [
@@ -68,7 +68,7 @@ class AccountingController extends Controller
     public function comingSoon(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/ComingSoon', [
             'title' => 'Coming Soon',
             'user' => [
@@ -87,7 +87,7 @@ class AccountingController extends Controller
     public function permissions(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/Permissions', [
             'title' => 'Permissions',
             'user' => [
@@ -106,7 +106,7 @@ class AccountingController extends Controller
     public function integration(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/Integration', [
             'title' => 'Integration',
             'user' => [
@@ -125,7 +125,7 @@ class AccountingController extends Controller
     public function auditTrail(Request $request)
     {
         $user = $request->user();
-        $building = $user->getBuilding();
+        $building = $this->getBuilding();
         return Inertia::render('Manager/AuditTrail', [
             'title' => 'Audit Trail',
             'user' => [

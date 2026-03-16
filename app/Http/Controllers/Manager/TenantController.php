@@ -12,8 +12,8 @@ class TenantController extends Controller
 {
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         // Get tenants linked to this building via leases, or tenants with no lease yet
         $query = Tenant::where(function ($q) use ($building) {
@@ -81,7 +81,7 @@ class TenantController extends Controller
 
     public function update(Request $request, Tenant $tenant)
     {
-        $building = Auth::user()->getBuilding();
+        $building = $this->getBuilding();
 
         // Verify tenant belongs to this building
         $belongsToBuilding = $tenant->leases()

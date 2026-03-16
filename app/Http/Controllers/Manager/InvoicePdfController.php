@@ -11,8 +11,8 @@ class InvoicePdfController extends Controller
 {
     public function download(Invoice $invoice)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
         abort_unless($invoice->building_id === $building->id, 403);
         $invoice->load(['lease.unit', 'tenant', 'items', 'payments', 'creator']);
         $pdf = Pdf::loadView('pdf.invoice', ['invoice' => $invoice, 'building' => $building]);

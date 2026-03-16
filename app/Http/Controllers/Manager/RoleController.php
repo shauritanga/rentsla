@@ -14,8 +14,8 @@ class RoleController extends Controller
 {
     public function index(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         // Get default system roles and custom building roles
         $roles = Role::assignableForBuilding($building->id)
@@ -64,8 +64,8 @@ class RoleController extends Controller
 
     public function store(Request $request)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -101,8 +101,8 @@ class RoleController extends Controller
 
     public function update(Request $request, Role $role)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         // System default roles: only allow permission edits (for building-scoped copies)
         // Custom building roles: allow name, description & permission edits
@@ -149,8 +149,8 @@ class RoleController extends Controller
 
     public function destroy(Role $role)
     {
-        $user = Auth::user();
-        $building = $user->getBuilding();
+        $user = $this->getUser();
+        $building = $this->getBuilding();
 
         if ($role->is_system) {
             abort(403, 'System roles cannot be deleted.');

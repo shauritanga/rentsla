@@ -1,6 +1,12 @@
 import React, { useState } from "react";
 import ManagerLayout from "@/Layouts/ManagerLayout";
 import { router, useForm, Link } from "@inertiajs/react";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+    EllipsisVertical,
+    EyeIcon,
+    MailSend01Icon,
+} from "@hugeicons/core-free-icons";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -120,6 +126,10 @@ export default function Invoices({
     const [search, setSearch] = useState(filters.search);
     const [filterType, setFilterType] = useState(filters.type);
     const [filterStatus, setFilterStatus] = useState(filters.status);
+    const [sendingId, setSendingId] = useState<number | null>(null);
+    const [openRowActionsId, setOpenRowActionsId] = useState<number | null>(
+        null,
+    );
     const [additionalItems, setAdditionalItems] = useState<AdditionalItem[]>(
         [],
     );
@@ -127,6 +137,7 @@ export default function Invoices({
     const createForm = useForm({
         lease_id: "",
         type: "invoice" as "proforma" | "invoice",
+        submission_action: "save" as "save" | "send",
         billing_months: "3",
         issue_date: today,
         due_date: defaultDueDate,
@@ -227,9 +238,12 @@ export default function Invoices({
                     : new Date(leaseInvoices[0].period_end);
                 lastEnd.setDate(lastEnd.getDate() + 1);
                 nextPeriodStart = lastEnd.toISOString().split("T")[0];
+            } else if (lease.fitout_applicable && lease.fitout_start_date) {
+                // First billing document should start at fit-out start so service charges begin immediately.
+                nextPeriodStart = lease.fitout_start_date;
             } else if (lease.fitout_applicable && lease.fitout_end_date) {
-                // If fit-out applies, start after fit-out end
-                const fitoutEnd = new Date(lease.fitout_end_date);
+                // Fallback when fit-out start is missing: start after fit-out end.
+                const fitoutEnd = new Date(`${lease.fitout_end_date}T00:00:00`);
                 fitoutEnd.setDate(fitoutEnd.getDate() + 1);
                 nextPeriodStart = fitoutEnd.toISOString().split("T")[0];
             } else if (lease.start_date) {
@@ -271,8 +285,11 @@ export default function Invoices({
         setAdditionalItems(updated);
     }
 
-    function handleSubmit(e: React.FormEvent) {
-        e.preventDefault();
+    function handleSubmit(
+        submissionAction: "save" | "send",
+        e?: React.FormEvent,
+    ) {
+        e?.preventDefault();
         const items = additionalItems
             .filter((it) => it.description && Number(it.amount) > 0)
             .map((it) => ({
@@ -283,6 +300,7 @@ export default function Invoices({
 
         createForm.transform((data) => ({
             ...data,
+            submission_action: submissionAction,
             additional_items: items.length > 0 ? items : undefined,
         }));
 
@@ -293,6 +311,33 @@ export default function Invoices({
             },
         });
     }
+
+    function handleSendDocument(invoiceId: number) {
+        setOpenRowActionsId(null);
+        setSendingId(invoiceId);
+        router.post(
+            `/manager/invoices/${invoiceId}/send`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSendingId((current) => (current === invoiceId ? null : current)),
+            },
+        );
+    }
+
+    React.useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            const target = event.target as HTMLElement;
+            if (!target.closest("[data-row-actions-container]")) {
+                setOpenRowActionsId(null);
+            }
+        }
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
     return (
         <ManagerLayout
@@ -465,7 +510,7 @@ export default function Invoices({
                                     </td>
                                 </tr>
                             ) : (
-                                invoices.data.map((inv) => (
+                                invoices.data.map((inv, rowIndex) => (
                                     <tr
                                         key={inv.id}
                                         className="hover:bg-slate-50/50 transition"
@@ -534,24 +579,93 @@ export default function Invoices({
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 text-right">
-                                            <Link
-                                                href={`/manager/invoices/${inv.id}`}
-                                                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition inline-flex items-center"
-                                                title="View"
+                                            <div
+                                                className="relative inline-flex"
+                                                data-row-actions-container
                                             >
-                                                <svg
-                                                    className="h-4 w-4"
-                                                    viewBox="0 0 20 20"
-                                                    fill="currentColor"
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setOpenRowActionsId(
+                                                            (current) =>
+                                                                current ===
+                                                                inv.id
+                                                                    ? null
+                                                                    : inv.id,
+                                                        )
+                                                    }
+                                                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition inline-flex items-center"
+                                                    title="More actions"
+                                                    aria-label="More actions"
                                                 >
-                                                    <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
-                                                    <path
-                                                        fillRule="evenodd"
-                                                        d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
-                                                        clipRule="evenodd"
+                                                    <HugeiconsIcon
+                                                        icon={EllipsisVertical}
+                                                        size={18}
+                                                        strokeWidth={1.8}
                                                     />
-                                                </svg>
-                                            </Link>
+                                                </button>
+
+                                                {openRowActionsId === inv.id && (
+                                                    <div
+                                                        className={`absolute right-0 z-30 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl ${
+                                                            rowIndex >=
+                                                            invoices.data.length -
+                                                                2
+                                                                ? "bottom-full mb-2"
+                                                                : "top-full mt-2"
+                                                        }`}
+                                                    >
+                                                        <Link
+                                                            href={`/manager/invoices/${inv.id}`}
+                                                            onClick={() =>
+                                                                setOpenRowActionsId(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                                        >
+                                                            <HugeiconsIcon
+                                                                icon={EyeIcon}
+                                                                size={16}
+                                                                strokeWidth={1.8}
+                                                            />
+                                                            View
+                                                        </Link>
+
+                                                        {(inv.status ===
+                                                            "draft" ||
+                                                            inv.status ===
+                                                                "sent") && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    handleSendDocument(
+                                                                        inv.id,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    sendingId ===
+                                                                    inv.id
+                                                                }
+                                                                className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-50"
+                                                            >
+                                                                <HugeiconsIcon
+                                                                    icon={MailSend01Icon}
+                                                                    size={16}
+                                                                    strokeWidth={1.8}
+                                                                />
+                                                                {sendingId ===
+                                                                inv.id
+                                                                    ? "Sending..."
+                                                                    : inv.status ===
+                                                                        "draft"
+                                                                      ? "Send"
+                                                                      : "Resend"}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -599,14 +713,39 @@ export default function Invoices({
                         onClick={() => setShowCreateModal(false)}
                     />
                     <div className="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl my-8">
-                        <h2 className="text-lg font-bold text-slate-900 mb-6">
-                            Create{" "}
-                            {createForm.data.type === "proforma"
-                                ? "Proforma"
-                                : "Invoice"}
-                        </h2>
+                        <div className="mb-6 flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-slate-900">
+                                Create{" "}
+                                {createForm.data.type === "proforma"
+                                    ? "Proforma"
+                                    : "Invoice"}
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setShowCreateModal(false)}
+                                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                aria-label="Close dialog"
+                                title="Close"
+                            >
+                                <svg
+                                    className="h-5 w-5"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        fillRule="evenodd"
+                                        d="M4.22 4.22a.75.75 0 011.06 0L10 8.94l4.72-4.72a.75.75 0 111.06 1.06L11.06 10l4.72 4.72a.75.75 0 11-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 11-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 010-1.06z"
+                                        clipRule="evenodd"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
 
-                        <form onSubmit={handleSubmit} className="space-y-5">
+                        <form
+                            onSubmit={(e) => handleSubmit("save", e)}
+                            className="space-y-5"
+                        >
                             {/* Type selector */}
                             <div className="flex gap-3">
                                 {(
@@ -976,19 +1115,23 @@ export default function Invoices({
                             <div className="flex items-center justify-end gap-3 pt-2">
                                 <button
                                     type="button"
-                                    onClick={() => setShowCreateModal(false)}
-                                    className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 transition"
+                                    onClick={(e) => handleSubmit("save", e)}
+                                    disabled={createForm.processing}
+                                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                                 >
-                                    Cancel
+                                    {createForm.processing
+                                        ? "Saving..."
+                                        : "Save as Draft"}
                                 </button>
                                 <button
-                                    type="submit"
+                                    type="button"
+                                    onClick={(e) => handleSubmit("send", e)}
                                     disabled={createForm.processing}
                                     className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:shadow-blue-500/40 disabled:opacity-50"
                                 >
                                     {createForm.processing
-                                        ? "Creating..."
-                                        : `Create ${createForm.data.type === "proforma" ? "Proforma" : "Invoice"}`}
+                                        ? "Sending..."
+                                        : `Send ${createForm.data.type === "proforma" ? "Proforma" : "Invoice"}`}
                                 </button>
                             </div>
                         </form>

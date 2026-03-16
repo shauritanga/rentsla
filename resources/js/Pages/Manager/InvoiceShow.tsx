@@ -1,8 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import ManagerLayout from "@/Layouts/ManagerLayout";
 import { router, useForm, Link } from "@inertiajs/react";
 import { route } from "ziggy-js";
 import { Ziggy } from "@/ziggy";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+    More02Icon,
+    ArrowDown01Icon,
+    CreditCardIcon,
+    ArrowRight01Icon,
+    MailSend01Icon,
+    Cancel01Icon,
+} from "@hugeicons/core-free-icons";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -106,6 +115,10 @@ const statusColors: Record<string, string> = {
 /* ------------------------------------------------------------------ */
 export default function InvoiceShow({ user, building, invoice }: Props) {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [showActionsMenu, setShowActionsMenu] = useState(false);
+    const [showResendConfirm, setShowResendConfirm] = useState(false);
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+    const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
     const paymentForm = useForm({
         amount: "",
@@ -116,13 +129,8 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
     });
 
     function handleConvert() {
-        if (
-            confirm(
-                "Convert this proforma to a formal invoice? This cannot be undone.",
-            )
-        ) {
-            router.post(`/manager/invoices/${invoice.id}/convert`);
-        }
+        setShowActionsMenu(false);
+        router.post(`/manager/invoices/${invoice.id}/convert`);
     }
 
     function handleSend() {
@@ -130,9 +138,29 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
     }
 
     function handleCancel() {
-        if (confirm("Cancel this invoice? This cannot be undone.")) {
-            router.post(`/manager/invoices/${invoice.id}/cancel`);
+        router.post(`/manager/invoices/${invoice.id}/cancel`);
+    }
+
+    function handleSendClick() {
+        setShowActionsMenu(false);
+
+        if (invoice.status === "draft") {
+            handleSend();
+            return;
         }
+
+        setShowResendConfirm(true);
+    }
+
+    function handleCancelClick() {
+        setShowActionsMenu(false);
+        setShowCancelConfirm(true);
+    }
+
+    function handleOpenPaymentModal() {
+        setShowActionsMenu(false);
+        paymentForm.setData("amount", String(invoice.balance));
+        setShowPaymentModal(true);
     }
 
     function handlePayment(e: React.FormEvent) {
@@ -154,10 +182,30 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
         invoice.type === "invoice" &&
         !["paid", "cancelled"].includes(invoice.status);
     const canConvert = invoice.type === "proforma";
-    const canSend =
-        invoice.type === "invoice" &&
-        ["draft", "sent", "partial", "overdue"].includes(invoice.status);
+    const canSend = ["draft", "sent"].includes(invoice.status);
     const canCancel = !["paid", "cancelled"].includes(invoice.status);
+    const downloadUrl = route(
+        "manager.invoices.download",
+        { invoice: invoice.id },
+        false,
+        Ziggy,
+    );
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (
+                actionsMenuRef.current &&
+                !actionsMenuRef.current.contains(event.target as Node)
+            ) {
+                setShowActionsMenu(false);
+            }
+        }
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
 
     return (
         <ManagerLayout
@@ -192,61 +240,194 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <a
-                        href={route(
-                            "manager.invoices.download",
-                            { invoice: invoice.id },
-                            false,
-                            Ziggy,
+                    <div className="relative" ref={actionsMenuRef}>
+                        <button
+                            type="button"
+                            onClick={() => setShowActionsMenu((prev) => !prev)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        >
+                            <HugeiconsIcon
+                                icon={More02Icon}
+                                size={16}
+                                strokeWidth={1.8}
+                            />
+                            Actions
+                            <svg
+                                className="h-4 w-4"
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    fillRule="evenodd"
+                                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                    clipRule="evenodd"
+                                />
+                            </svg>
+                        </button>
+
+                        {showActionsMenu && (
+                            <div className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                                <a
+                                    href={downloadUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => setShowActionsMenu(false)}
+                                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    <HugeiconsIcon
+                                        icon={ArrowDown01Icon}
+                                        size={16}
+                                        strokeWidth={1.8}
+                                    />
+                                    Download PDF
+                                </a>
+
+                                {canRecordPayment && (
+                                    <button
+                                        type="button"
+                                        onClick={handleOpenPaymentModal}
+                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                                    >
+                                        <HugeiconsIcon
+                                            icon={CreditCardIcon}
+                                            size={16}
+                                            strokeWidth={1.8}
+                                        />
+                                        Make Payment
+                                    </button>
+                                )}
+
+                                {canConvert && (
+                                    <button
+                                        type="button"
+                                        onClick={handleConvert}
+                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-indigo-700 transition hover:bg-indigo-50"
+                                    >
+                                        <HugeiconsIcon
+                                            icon={ArrowRight01Icon}
+                                            size={16}
+                                            strokeWidth={1.8}
+                                        />
+                                        Convert to Invoice
+                                    </button>
+                                )}
+
+                                {canSend && (
+                                    <button
+                                        type="button"
+                                        onClick={handleSendClick}
+                                        className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50"
+                                    >
+                                        <HugeiconsIcon
+                                            icon={MailSend01Icon}
+                                            size={16}
+                                            strokeWidth={1.8}
+                                        />
+                                        {invoice.status === "draft"
+                                            ? "Send to Tenant"
+                                            : "Resend to Tenant"}
+                                    </button>
+                                )}
+
+                                {canCancel && (
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelClick}
+                                        className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
+                                    >
+                                        <HugeiconsIcon
+                                            icon={Cancel01Icon}
+                                            size={16}
+                                            strokeWidth={1.8}
+                                        />
+                                        Cancel Invoice
+                                    </button>
+                                )}
+                            </div>
                         )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition border border-slate-200"
-                    >
-                        Download PDF
-                    </a>
-                    {canConvert && (
-                        <button
-                            onClick={handleConvert}
-                            className="rounded-xl bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition"
-                        >
-                            Convert to Invoice
-                        </button>
-                    )}
-                    {canSend && (
-                        <button
-                            onClick={handleSend}
-                            className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition"
-                        >
-                            {invoice.status === "draft"
-                                ? "Send to Tenant"
-                                : "Resend to Tenant"}
-                        </button>
-                    )}
-                    {canRecordPayment && (
-                        <button
-                            onClick={() => {
-                                paymentForm.setData(
-                                    "amount",
-                                    String(invoice.balance),
-                                );
-                                setShowPaymentModal(true);
-                            }}
-                            className="rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-500/25 transition hover:shadow-emerald-500/40"
-                        >
-                            Record Payment
-                        </button>
-                    )}
-                    {canCancel && (
-                        <button
-                            onClick={handleCancel}
-                            className="rounded-xl bg-red-50 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100 transition"
-                        >
-                            Cancel
-                        </button>
-                    )}
+                    </div>
                 </div>
             </div>
+
+            {showResendConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                    <div
+                        className="fixed inset-0 bg-black/30 backdrop-blur-sm"
+                        onClick={() => setShowResendConfirm(false)}
+                    />
+                    <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                        <h2 className="text-lg font-bold text-slate-900">
+                            Confirm Resend
+                        </h2>
+                        <p className="mt-2 text-sm text-slate-600">
+                            This will resend the
+                            {invoice.type === "proforma"
+                                ? " proforma"
+                                : " invoice"}
+                            {" "}
+                            email and PDF to the tenant. Do you want to
+                            continue?
+                        </p>
+                        <div className="mt-6 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowResendConfirm(false)}
+                                className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 transition"
+                            >
+                                Back
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowResendConfirm(false);
+                                    handleSend();
+                                }}
+                                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                            >
+                                Resend Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCancelConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                    <div
+                        className="fixed inset-0 bg-black/30 backdrop-blur-sm"
+                        onClick={() => setShowCancelConfirm(false)}
+                    />
+                    <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                        <h2 className="text-lg font-bold text-slate-900">
+                            Cancel Invoice
+                        </h2>
+                        <p className="mt-2 text-sm text-slate-600">
+                            This action cannot be undone. Are you sure you want
+                            to cancel this invoice?
+                        </p>
+                        <div className="mt-6 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowCancelConfirm(false)}
+                                className="rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 transition"
+                            >
+                                Keep Invoice
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowCancelConfirm(false);
+                                    handleCancel();
+                                }}
+                                className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+                            >
+                                Confirm Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left column — Invoice details */}

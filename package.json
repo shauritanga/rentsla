@@ -19,6 +19,8 @@
         "vite": "^7.0.7"
     },
     "dependencies": {
+        "@hugeicons/core-free-icons": "^4.0.0",
+        "@hugeicons/react": "^1.1.6",
         "@inertiajs/react": "^2.3.17",
         "react": "^19.1.1",
         "react-dom": "^19.1.1",
