@@ -11,6 +11,7 @@ import {
     ArrowRight01Icon,
     MailSend01Icon,
     Cancel01Icon,
+    CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons";
 
 /* ------------------------------------------------------------------ */
@@ -252,18 +253,11 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
                                 strokeWidth={1.8}
                             />
                             Actions
-                            <svg
-                                className="h-4 w-4"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                aria-hidden="true"
-                            >
-                                <path
-                                    fillRule="evenodd"
-                                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-                                    clipRule="evenodd"
-                                />
-                            </svg>
+                            <HugeiconsIcon
+                                icon={ArrowDown01Icon}
+                                size={16}
+                                strokeWidth={1.8}
+                            />
                         </button>
 
                         {showActionsMenu && (
@@ -364,8 +358,7 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
                             This will resend the
                             {invoice.type === "proforma"
                                 ? " proforma"
-                                : " invoice"}
-                            {" "}
+                                : " invoice"}{" "}
                             email and PDF to the tenant. Do you want to
                             continue?
                         </p>
@@ -752,17 +745,11 @@ export default function InvoiceShow({ user, building, invoice }: Props) {
                                         className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100"
                                     >
                                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 text-xs font-bold flex-shrink-0">
-                                            <svg
-                                                className="h-4 w-4"
-                                                viewBox="0 0 20 20"
-                                                fill="currentColor"
-                                            >
-                                                <path
-                                                    fillRule="evenodd"
-                                                    d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
-                                                    clipRule="evenodd"
-                                                />
-                                            </svg>
+                                            <HugeiconsIcon
+                                                icon={CheckmarkCircle02Icon}
+                                                size={16}
+                                                strokeWidth={1.8}
+                                            />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-medium text-slate-800">

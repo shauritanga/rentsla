@@ -13,6 +13,7 @@ use App\Http\Controllers\Manager\InvoiceController;
 use App\Http\Controllers\Manager\AccountingController;
 use App\Http\Controllers\Manager\RoleController;
 use App\Http\Controllers\Manager\StaffController;
+use App\Http\Controllers\Manager\SettingsController as ManagerSettingsController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -167,4 +168,10 @@ Route::middleware(['auth', 'manager'])->prefix('manager')->name('manager.')->gro
     Route::post('/roles', [RoleController::class, 'store'])->name('roles.store');
     Route::put('/roles/{role}', [RoleController::class, 'update'])->name('roles.update');
     Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy');
+
+    // Profile & Settings
+    Route::get('/profile', [ManagerSettingsController::class, 'profile'])->name('profile');
+    Route::get('/settings', [ManagerSettingsController::class, 'settings'])->name('settings.index');
+    Route::put('/settings/profile', [ManagerSettingsController::class, 'updateProfile'])->name('settings.profile');
+    Route::put('/settings/password', [ManagerSettingsController::class, 'updatePassword'])->name('settings.password');
 });

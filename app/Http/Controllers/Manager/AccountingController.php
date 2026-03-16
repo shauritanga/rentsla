@@ -105,7 +105,9 @@ class AccountingController extends Controller
 
     public function integration(Request $request)
     {
-        $user = $request->user();
+        $this->ensureBuildingManager();
+
+        $user = $this->getUser();
         $building = $this->getBuilding();
         return Inertia::render('Manager/Integration', [
             'title' => 'Integration',
@@ -124,7 +126,9 @@ class AccountingController extends Controller
 
     public function auditTrail(Request $request)
     {
-        $user = $request->user();
+        $this->ensureBuildingManager();
+
+        $user = $this->getUser();
         $building = $this->getBuilding();
         return Inertia::render('Manager/AuditTrail', [
             'title' => 'Audit Trail',
@@ -139,5 +143,15 @@ class AccountingController extends Controller
                 'address' => $building->address,
             ],
         ]);
+    }
+
+    private function ensureBuildingManager(): void
+    {
+        $user = $this->getUser();
+        $building = $this->getBuilding();
+
+        if (!($user->managedBuilding && $user->managedBuilding->id === $building->id)) {
+            abort(403, 'Only the building manager can access this section.');
+        }
     }
 }

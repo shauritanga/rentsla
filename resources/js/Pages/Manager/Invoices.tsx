@@ -6,6 +6,9 @@ import {
     EllipsisVertical,
     EyeIcon,
     MailSend01Icon,
+    Add01Icon,
+    Cancel01Icon,
+    Delete02Icon,
 } from "@hugeicons/core-free-icons";
 
 /* ------------------------------------------------------------------ */
@@ -320,7 +323,10 @@ export default function Invoices({
             {},
             {
                 preserveScroll: true,
-                onFinish: () => setSendingId((current) => (current === invoiceId ? null : current)),
+                onFinish: () =>
+                    setSendingId((current) =>
+                        current === invoiceId ? null : current,
+                    ),
             },
         );
     }
@@ -453,13 +459,7 @@ export default function Invoices({
                     onClick={openCreate}
                     className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition hover:shadow-blue-500/40"
                 >
-                    <svg
-                        className="h-4 w-4"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                    >
-                        <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                    </svg>
+                    <HugeiconsIcon icon={Add01Icon} size={16} strokeWidth={2} />
                     Create Invoice
                 </button>
             </div>
@@ -605,11 +605,13 @@ export default function Invoices({
                                                     />
                                                 </button>
 
-                                                {openRowActionsId === inv.id && (
+                                                {openRowActionsId ===
+                                                    inv.id && (
                                                     <div
                                                         className={`absolute right-0 z-30 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl ${
                                                             rowIndex >=
-                                                            invoices.data.length -
+                                                            invoices.data
+                                                                .length -
                                                                 2
                                                                 ? "bottom-full mb-2"
                                                                 : "top-full mt-2"
@@ -627,7 +629,9 @@ export default function Invoices({
                                                             <HugeiconsIcon
                                                                 icon={EyeIcon}
                                                                 size={16}
-                                                                strokeWidth={1.8}
+                                                                strokeWidth={
+                                                                    1.8
+                                                                }
                                                             />
                                                             View
                                                         </Link>
@@ -650,9 +654,13 @@ export default function Invoices({
                                                                 className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-50"
                                                             >
                                                                 <HugeiconsIcon
-                                                                    icon={MailSend01Icon}
+                                                                    icon={
+                                                                        MailSend01Icon
+                                                                    }
                                                                     size={16}
-                                                                    strokeWidth={1.8}
+                                                                    strokeWidth={
+                                                                        1.8
+                                                                    }
                                                                 />
                                                                 {sendingId ===
                                                                 inv.id
@@ -727,18 +735,11 @@ export default function Invoices({
                                 aria-label="Close dialog"
                                 title="Close"
                             >
-                                <svg
-                                    className="h-5 w-5"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                    aria-hidden="true"
-                                >
-                                    <path
-                                        fillRule="evenodd"
-                                        d="M4.22 4.22a.75.75 0 011.06 0L10 8.94l4.72-4.72a.75.75 0 111.06 1.06L11.06 10l4.72 4.72a.75.75 0 11-1.06 1.06L10 11.06l-4.72 4.72a.75.75 0 11-1.06-1.06L8.94 10 4.22 5.28a.75.75 0 010-1.06z"
-                                        clipRule="evenodd"
-                                    />
-                                </svg>
+                                <HugeiconsIcon
+                                    icon={Cancel01Icon}
+                                    size={18}
+                                    strokeWidth={1.9}
+                                />
                             </button>
                         </div>
 
@@ -991,17 +992,11 @@ export default function Invoices({
                                             onClick={() => removeItem(i)}
                                             className="p-2 text-red-400 hover:text-red-600"
                                         >
-                                            <svg
-                                                className="h-4 w-4"
-                                                viewBox="0 0 20 20"
-                                                fill="currentColor"
-                                            >
-                                                <path
-                                                    fillRule="evenodd"
-                                                    d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5z"
-                                                    clipRule="evenodd"
-                                                />
-                                            </svg>
+                                            <HugeiconsIcon
+                                                icon={Delete02Icon}
+                                                size={16}
+                                                strokeWidth={1.9}
+                                            />
                                         </button>
                                     </div>
                                 ))}

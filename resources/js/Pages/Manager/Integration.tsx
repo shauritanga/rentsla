@@ -5,7 +5,7 @@ export default function Integration({ title, user, building }: any) {
     return (
         <ManagerLayout
             title={title}
-            activeNav="integration"
+            activeNav="settings"
             user={user}
             building={building}
         >

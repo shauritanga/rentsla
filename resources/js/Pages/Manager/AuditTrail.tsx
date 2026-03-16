@@ -5,7 +5,7 @@ export default function AuditTrail({ title, user, building }: any) {
     return (
         <ManagerLayout
             title={title}
-            activeNav="audittrail"
+            activeNav="settings"
             user={user}
             building={building}
         >
