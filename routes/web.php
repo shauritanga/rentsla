@@ -10,6 +10,7 @@ use App\Http\Controllers\Manager\TenantController;
 use App\Http\Controllers\Manager\LeaseController;
 use App\Http\Controllers\Manager\PaymentController;
 use App\Http\Controllers\Manager\InvoiceController;
+use App\Http\Controllers\Manager\ElectricityController;
 use App\Http\Controllers\Manager\AccountingController;
 use App\Http\Controllers\Manager\RoleController;
 use App\Http\Controllers\Manager\StaffController;
@@ -156,6 +157,13 @@ Route::middleware(['auth', 'manager'])->prefix('manager')->name('manager.')->gro
     Route::post('/invoices/{invoice}/send', [InvoiceController::class, 'send'])->name('invoices.send');
     Route::post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
     Route::post('/invoices/{invoice}/payment', [InvoiceController::class, 'recordPayment'])->name('invoices.payment');
+
+    // Electricity billing workspace
+    Route::get('/electricity', [ElectricityController::class, 'index'])->name('electricity.index');
+    Route::post('/electricity/batches', [ElectricityController::class, 'createBatch'])->name('electricity.batches.store');
+    Route::post('/electricity/batches/{batch}/readings', [ElectricityController::class, 'saveReadings'])->name('electricity.batches.readings.store');
+    Route::post('/electricity/batches/{batch}/calculate', [ElectricityController::class, 'calculate'])->name('electricity.batches.calculate');
+    Route::post('/electricity/batches/{batch}/approve', [ElectricityController::class, 'approveAndPost'])->name('electricity.batches.approve');
 
     // Staff
     Route::get('/staff', [StaffController::class, 'index'])->name('staff.index');

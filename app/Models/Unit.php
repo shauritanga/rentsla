@@ -50,4 +50,9 @@ class Unit extends Model
     {
         return $this->hasOne(Lease::class)->where('status', 'active');
     }
+
+    public function electricityReadings(): HasMany
+    {
+        return $this->hasMany(ElectricityReading::class);
+    }
 }

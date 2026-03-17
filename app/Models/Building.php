@@ -44,4 +44,9 @@ class Building extends Model
     {
         return $this->hasMany(Lease::class);
     }
+
+    public function electricityBatches(): HasMany
+    {
+        return $this->hasMany(ElectricityBatch::class);
+    }
 }

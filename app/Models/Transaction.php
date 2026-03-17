@@ -10,7 +10,7 @@ class Transaction extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['date', 'description', 'reference_type', 'reference_id', 'created_by'];
+    protected $fillable = ['date', 'description', 'reference_type', 'reference_id', 'bill_category', 'created_by'];
 
     public function entries(): HasMany
     {

@@ -1,6 +1,7 @@
 import React from "react";
-import { Link, useForm } from "@inertiajs/react";
+import { useForm } from "@inertiajs/react";
 import ManagerLayout from "@/Layouts/ManagerLayout";
+import SettingsTabs from "@/Pages/Manager/components/SettingsTabs";
 
 interface ManagerSettingsProps {
     user: {
@@ -142,44 +143,12 @@ function PasswordForm() {
     );
 }
 
-function ModulesSection() {
-    return (
-        <Section
-            title="Platform Modules"
-            description="Advanced manager controls grouped under settings."
-        >
-            <div className="grid gap-3 sm:grid-cols-2">
-                <Link
-                    href="/manager/audittrail"
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-blue-200 hover:bg-blue-50"
-                >
-                    <p className="text-sm font-semibold text-slate-800">
-                        Audit Trail
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                        Review tracked actions and system activity.
-                    </p>
-                </Link>
-                <Link
-                    href="/manager/integration"
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-blue-200 hover:bg-blue-50"
-                >
-                    <p className="text-sm font-semibold text-slate-800">
-                        Integration
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                        Manage external services and integration setup.
-                    </p>
-                </Link>
-            </div>
-        </Section>
-    );
-}
-
 export default function ManagerSettings({
     user,
     building,
 }: ManagerSettingsProps) {
+    const isBuildingManager = user?.role === "Building Manager";
+
     return (
         <ManagerLayout
             title="Settings"
@@ -188,8 +157,11 @@ export default function ManagerSettings({
             building={building}
         >
             <div className="mx-auto max-w-4xl space-y-4">
+                <SettingsTabs
+                    activeTab="security"
+                    isBuildingManager={isBuildingManager}
+                />
                 <PasswordForm />
-                <ModulesSection />
             </div>
         </ManagerLayout>
     );

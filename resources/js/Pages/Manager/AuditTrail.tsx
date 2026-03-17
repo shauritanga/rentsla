@@ -1,7 +1,10 @@
 import React from "react";
 import ManagerLayout from "@/Layouts/ManagerLayout";
+import SettingsTabs from "@/Pages/Manager/components/SettingsTabs";
 
 export default function AuditTrail({ title, user, building }: any) {
+    const isBuildingManager = user?.role === "Building Manager";
+
     return (
         <ManagerLayout
             title={title}
@@ -9,12 +12,18 @@ export default function AuditTrail({ title, user, building }: any) {
             user={user}
             building={building}
         >
-            <div className="flex flex-col items-center justify-center h-96">
-                <h1 className="text-3xl font-bold mb-4">Coming Soon</h1>
-                <p className="text-slate-500">
-                    This feature is under construction and will be available in
-                    a future update.
-                </p>
+            <div className="mx-auto max-w-4xl space-y-4">
+                <SettingsTabs
+                    activeTab="audit"
+                    isBuildingManager={isBuildingManager}
+                />
+                <div className="flex h-96 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <h1 className="mb-4 text-3xl font-bold">Coming Soon</h1>
+                    <p className="text-slate-500">
+                        This feature is under construction and will be available
+                        in a future update.
+                    </p>
+                </div>
             </div>
         </ManagerLayout>
     );

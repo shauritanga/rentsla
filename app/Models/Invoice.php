@@ -11,6 +11,10 @@ class Invoice extends Model
 {
     use HasFactory;
 
+    /* Bill category constants */
+    const CATEGORY_LEASE = 'lease';
+    const CATEGORY_ELECTRICITY = 'electricity';
+
     /* Type constants */
     const TYPE_PROFORMA = 'proforma';
     const TYPE_INVOICE  = 'invoice';
@@ -29,6 +33,9 @@ class Invoice extends Model
         'building_id',
         'lease_id',
         'tenant_id',
+        'bill_category',
+        'billing_cycle',
+        'source_mix_mode',
         'type',
         'status',
         'billing_months',
@@ -114,9 +121,14 @@ class Invoice extends Model
     /**
      * Generate the next invoice/proforma number for a building.
      */
-    public static function nextNumber(int $buildingId, string $type): string
+    public static function nextNumber(int $buildingId, string $type, string $billCategory = self::CATEGORY_LEASE): string
     {
-        $prefix = $type === self::TYPE_PROFORMA ? 'PF' : 'INV';
+        $prefix = match ([$billCategory, $type]) {
+            [self::CATEGORY_ELECTRICITY, self::TYPE_PROFORMA] => 'EPF',
+            [self::CATEGORY_ELECTRICITY, self::TYPE_INVOICE] => 'EINV',
+            [self::CATEGORY_LEASE, self::TYPE_PROFORMA] => 'LPF',
+            default => 'LINV',
+        };
         $year   = now()->year;
         $column = $type === self::TYPE_PROFORMA ? 'proforma_number' : 'invoice_number';
 

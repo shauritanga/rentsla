@@ -33,6 +33,7 @@ interface Invoice {
     id: number;
     invoice_number: string;
     proforma_number: string | null;
+    bill_category: "lease" | "electricity";
     type: "proforma" | "invoice";
     status: string;
     tenant: string;
@@ -72,7 +73,12 @@ interface Props {
         outstanding: number;
         overdue_count: number;
     };
-    filters: { search: string; type: string; status: string };
+    filters: {
+        search: string;
+        type: string;
+        status: string;
+        bill_category: string;
+    };
 }
 
 interface AdditionalItem {
@@ -129,6 +135,9 @@ export default function Invoices({
     const [search, setSearch] = useState(filters.search);
     const [filterType, setFilterType] = useState(filters.type);
     const [filterStatus, setFilterStatus] = useState(filters.status);
+    const [filterBillCategory, setFilterBillCategory] = useState(
+        filters.bill_category,
+    );
     const [sendingId, setSendingId] = useState<number | null>(null);
     const [openRowActionsId, setOpenRowActionsId] = useState<number | null>(
         null,
@@ -139,6 +148,8 @@ export default function Invoices({
 
     const createForm = useForm({
         lease_id: "",
+        bill_category: "lease" as "lease" | "electricity",
+        source_mix_mode: "blended" as "blended" | "source_specific",
         type: "invoice" as "proforma" | "invoice",
         submission_action: "save" as "save" | "send",
         billing_months: "3",
@@ -147,6 +158,8 @@ export default function Invoices({
         period_start: "",
         service_charge_rate: "5",
         withholding_tax_rate: "10",
+        electricity_amount: "",
+        electricity_description: "",
         notes: "",
         additional_items: [] as {
             description: string;
@@ -161,6 +174,7 @@ export default function Invoices({
     );
 
     // Calculations
+    const isElectricityBill = createForm.data.bill_category === "electricity";
     const monthlyRent = selectedLease?.monthly_rent ?? 0;
     const billingMonths = Number(createForm.data.billing_months) || 3;
     const rentAmount = monthlyRent * billingMonths;
@@ -177,6 +191,7 @@ export default function Invoices({
     const withholdingTaxAmount =
         Math.round(rentAmount * withholdingTaxRate) / 100;
     const totalAmount = subtotal - withholdingTaxAmount;
+    const electricityAmount = Number(createForm.data.electricity_amount) || 0;
 
     function applyFilters() {
         router.get(
@@ -185,6 +200,7 @@ export default function Invoices({
                 search: search || undefined,
                 type: filterType || undefined,
                 status: filterStatus || undefined,
+                bill_category: filterBillCategory || undefined,
             },
             { preserveState: true, replace: true },
         );
@@ -196,6 +212,10 @@ export default function Invoices({
             ...data,
             issue_date: today,
             due_date: defaultDueDate,
+            bill_category: "lease",
+            source_mix_mode: "blended",
+            electricity_amount: "",
+            electricity_description: "",
         }));
         createForm.clearErrors();
         setAdditionalItems([]);
@@ -429,6 +449,23 @@ export default function Invoices({
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-slate-500 mb-1">
+                            Category
+                        </label>
+                        <select
+                            value={filterBillCategory}
+                            onChange={(e) => {
+                                setFilterBillCategory(e.target.value);
+                                setTimeout(applyFilters, 0);
+                            }}
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition"
+                        >
+                            <option value="">All</option>
+                            <option value="lease">Lease</option>
+                            <option value="electricity">Electricity</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">
                             Status
                         </label>
                         <select
@@ -533,6 +570,21 @@ export default function Invoices({
                                                     ? "Proforma"
                                                     : "Invoice"}
                                             </span>
+                                            <div className="mt-1">
+                                                <span
+                                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                                        inv.bill_category ===
+                                                        "electricity"
+                                                            ? "bg-amber-50 text-amber-700"
+                                                            : "bg-slate-100 text-slate-600"
+                                                    }`}
+                                                >
+                                                    {inv.bill_category ===
+                                                    "electricity"
+                                                        ? "Electricity"
+                                                        : "Lease"}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3">
                                             <p className="text-sm font-medium text-slate-800">
@@ -747,6 +799,63 @@ export default function Invoices({
                             onSubmit={(e) => handleSubmit("save", e)}
                             className="space-y-5"
                         >
+                            {/* Bill category selector */}
+                            <div className="flex gap-3">
+                                {(
+                                    [
+                                        ["lease", "Lease Bill"],
+                                        ["electricity", "Electricity Bill"],
+                                    ] as const
+                                ).map(([val, label]) => (
+                                    <button
+                                        key={val}
+                                        type="button"
+                                        onClick={() => {
+                                            createForm.setData(
+                                                "bill_category",
+                                                val,
+                                            );
+                                            if (val === "electricity") {
+                                                createForm.setData(
+                                                    "billing_months",
+                                                    "1",
+                                                );
+                                                createForm.setData(
+                                                    "service_charge_rate",
+                                                    "0",
+                                                );
+                                                createForm.setData(
+                                                    "withholding_tax_rate",
+                                                    "0",
+                                                );
+                                                setAdditionalItems([]);
+                                            } else {
+                                                createForm.setData(
+                                                    "billing_months",
+                                                    "3",
+                                                );
+                                                createForm.setData(
+                                                    "service_charge_rate",
+                                                    "5",
+                                                );
+                                                createForm.setData(
+                                                    "withholding_tax_rate",
+                                                    "10",
+                                                );
+                                            }
+                                        }}
+                                        className={`flex-1 rounded-xl py-2.5 text-sm font-semibold transition border ${
+                                            createForm.data.bill_category ===
+                                            val
+                                                ? "border-blue-500 bg-blue-50 text-blue-700"
+                                                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                                        }`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+
                             {/* Type selector */}
                             <div className="flex gap-3">
                                 {(
@@ -803,31 +912,45 @@ export default function Invoices({
                                 )}
                             </div>
 
-                            {/* Billing months + dates row */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {/* Billing dates */}
+                            <div
+                                className={`grid gap-3 ${
+                                    isElectricityBill
+                                        ? "grid-cols-1 sm:grid-cols-3"
+                                        : "grid-cols-2 sm:grid-cols-4"
+                                }`}
+                            >
+                                {!isElectricityBill && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Billing Period
+                                        </label>
+                                        <select
+                                            value={
+                                                createForm.data.billing_months
+                                            }
+                                            onChange={(e) =>
+                                                createForm.setData(
+                                                    "billing_months",
+                                                    e.target.value,
+                                                )
+                                            }
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                        >
+                                            <option value="3">3 Months</option>
+                                            <option value="4">4 Months</option>
+                                            <option value="6">6 Months</option>
+                                            <option value="12">
+                                                12 Months
+                                            </option>
+                                        </select>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Billing Period
-                                    </label>
-                                    <select
-                                        value={createForm.data.billing_months}
-                                        onChange={(e) =>
-                                            createForm.setData(
-                                                "billing_months",
-                                                e.target.value,
-                                            )
-                                        }
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                    >
-                                        <option value="3">3 Months</option>
-                                        <option value="4">4 Months</option>
-                                        <option value="6">6 Months</option>
-                                        <option value="12">12 Months</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Period Start
+                                        {isElectricityBill
+                                            ? "Billing Month"
+                                            : "Period Start"}
                                     </label>
                                     <input
                                         type="date"
@@ -875,135 +998,225 @@ export default function Invoices({
                                 </div>
                             </div>
 
-                            {/* Tax rates */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Service Charge %
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="0.01"
-                                        value={
-                                            createForm.data.service_charge_rate
-                                        }
-                                        onChange={(e) =>
-                                            createForm.setData(
-                                                "service_charge_rate",
-                                                e.target.value,
-                                            )
-                                        }
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Withholding Tax %
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="0.01"
-                                        value={
-                                            createForm.data.withholding_tax_rate
-                                        }
-                                        onChange={(e) =>
-                                            createForm.setData(
-                                                "withholding_tax_rate",
-                                                e.target.value,
-                                            )
-                                        }
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Additional items */}
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="block text-sm font-medium text-slate-700">
-                                        Additional Charges
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={addItem}
-                                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
-                                    >
-                                        + Add Item
-                                    </button>
-                                </div>
-                                {additionalItems.map((item, i) => (
-                                    <div
-                                        key={i}
-                                        className="flex gap-2 mb-2 items-start"
-                                    >
-                                        <input
-                                            type="text"
-                                            placeholder="Description"
-                                            value={item.description}
-                                            onChange={(e) =>
-                                                updateItem(
-                                                    i,
-                                                    "description",
-                                                    e.target.value,
-                                                )
-                                            }
-                                            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                                        />
-                                        <select
-                                            value={item.item_type}
-                                            onChange={(e) =>
-                                                updateItem(
-                                                    i,
-                                                    "item_type",
-                                                    e.target.value,
-                                                )
-                                            }
-                                            className="w-28 rounded-lg border border-slate-300 px-2 py-2 text-sm"
-                                        >
-                                            <option value="deposit">
-                                                Deposit
-                                            </option>
-                                            <option value="penalty">
-                                                Penalty
-                                            </option>
-                                            <option value="other">Other</option>
-                                        </select>
+                            {isElectricityBill ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Electricity Amount
+                                        </label>
                                         <input
                                             type="number"
                                             min="0"
                                             step="0.01"
-                                            placeholder="Amount"
-                                            value={item.amount}
+                                            value={
+                                                createForm.data
+                                                    .electricity_amount
+                                            }
                                             onChange={(e) =>
-                                                updateItem(
-                                                    i,
-                                                    "amount",
+                                                createForm.setData(
+                                                    "electricity_amount",
                                                     e.target.value,
                                                 )
                                             }
-                                            className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                            placeholder="Monthly electricity charge"
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() => removeItem(i)}
-                                            className="p-2 text-red-400 hover:text-red-600"
-                                        >
-                                            <HugeiconsIcon
-                                                icon={Delete02Icon}
-                                                size={16}
-                                                strokeWidth={1.9}
-                                            />
-                                        </button>
+                                        {createForm.errors
+                                            .electricity_amount && (
+                                            <p className="text-xs text-red-500 mt-1">
+                                                {
+                                                    createForm.errors
+                                                        .electricity_amount
+                                                }
+                                            </p>
+                                        )}
                                     </div>
-                                ))}
-                            </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Source Mix Mode
+                                        </label>
+                                        <select
+                                            value={
+                                                createForm.data.source_mix_mode
+                                            }
+                                            onChange={(e) =>
+                                                createForm.setData(
+                                                    "source_mix_mode",
+                                                    e.target.value as
+                                                        | "blended"
+                                                        | "source_specific",
+                                                )
+                                            }
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                        >
+                                            <option value="blended">
+                                                Blended
+                                            </option>
+                                            <option value="source_specific">
+                                                Source Specific
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Description
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={
+                                                createForm.data
+                                                    .electricity_description
+                                            }
+                                            onChange={(e) =>
+                                                createForm.setData(
+                                                    "electricity_description",
+                                                    e.target.value,
+                                                )
+                                            }
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                            placeholder="Electricity charge (Mar 2026)"
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Tax rates */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                                Service Charge %
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                value={
+                                                    createForm.data
+                                                        .service_charge_rate
+                                                }
+                                                onChange={(e) =>
+                                                    createForm.setData(
+                                                        "service_charge_rate",
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                                Withholding Tax %
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                value={
+                                                    createForm.data
+                                                        .withholding_tax_rate
+                                                }
+                                                onChange={(e) =>
+                                                    createForm.setData(
+                                                        "withholding_tax_rate",
+                                                        e.target.value,
+                                                    )
+                                                }
+                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Additional items */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-sm font-medium text-slate-700">
+                                                Additional Charges
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={addItem}
+                                                className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                                            >
+                                                + Add Item
+                                            </button>
+                                        </div>
+                                        {additionalItems.map((item, i) => (
+                                            <div
+                                                key={i}
+                                                className="flex gap-2 mb-2 items-start"
+                                            >
+                                                <input
+                                                    type="text"
+                                                    placeholder="Description"
+                                                    value={item.description}
+                                                    onChange={(e) =>
+                                                        updateItem(
+                                                            i,
+                                                            "description",
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                                />
+                                                <select
+                                                    value={item.item_type}
+                                                    onChange={(e) =>
+                                                        updateItem(
+                                                            i,
+                                                            "item_type",
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="w-28 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                                                >
+                                                    <option value="deposit">
+                                                        Deposit
+                                                    </option>
+                                                    <option value="penalty">
+                                                        Penalty
+                                                    </option>
+                                                    <option value="other">
+                                                        Other
+                                                    </option>
+                                                </select>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    placeholder="Amount"
+                                                    value={item.amount}
+                                                    onChange={(e) =>
+                                                        updateItem(
+                                                            i,
+                                                            "amount",
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                    className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        removeItem(i)
+                                                    }
+                                                    className="p-2 text-red-400 hover:text-red-600"
+                                                >
+                                                    <HugeiconsIcon
+                                                        icon={Delete02Icon}
+                                                        size={16}
+                                                        strokeWidth={1.9}
+                                                    />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
 
                             {/* Summary */}
-                            {selectedLease && (
+                            {selectedLease && !isElectricityBill && (
                                 <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
                                     <h4 className="text-sm font-semibold text-slate-700 mb-3">
                                         Amount Summary
@@ -1080,6 +1293,25 @@ export default function Invoices({
                                         <span className="font-bold text-blue-700 text-base">
                                             {formatCurrency(
                                                 totalAmount,
+                                                selectedLease.rent_currency,
+                                            )}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedLease && isElectricityBill && (
+                                <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-2">
+                                    <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                                        Electricity Summary
+                                    </h4>
+                                    <div className="flex justify-between text-sm border-t border-slate-300 pt-2">
+                                        <span className="text-slate-800 font-bold">
+                                            Net Payable
+                                        </span>
+                                        <span className="font-bold text-blue-700 text-base">
+                                            {formatCurrency(
+                                                electricityAmount,
                                                 selectedLease.rent_currency,
                                             )}
                                         </span>

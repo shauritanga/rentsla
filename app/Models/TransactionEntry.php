@@ -10,7 +10,7 @@ class TransactionEntry extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['transaction_id', 'account_id', 'debit', 'credit', 'description'];
+    protected $fillable = ['transaction_id', 'account_id', 'bill_category', 'debit', 'credit', 'description'];
 
     public function transaction(): BelongsTo
     {

@@ -22,4 +22,9 @@ class Tenant extends Model
     {
         return $this->hasMany(Lease::class);
     }
+
+    public function electricityReadings(): HasMany
+    {
+        return $this->hasMany(ElectricityReading::class);
+    }
 }

@@ -43,6 +43,10 @@ class InvoiceController extends Controller
             $query->where('status', $status);
         }
 
+        if ($billCategory = $request->input('bill_category')) {
+            $query->where('bill_category', $billCategory);
+        }
+
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('invoice_number', 'ilike', "%{$search}%")
@@ -56,6 +60,7 @@ class InvoiceController extends Controller
             'id'               => $inv->id,
             'invoice_number'   => $inv->invoice_number,
             'proforma_number'  => $inv->proforma_number,
+            'bill_category'    => $inv->bill_category,
             'type'             => $inv->type,
             'status'           => $inv->status,
             'tenant'           => $inv->tenant->full_name ?? 'N/A',
@@ -117,6 +122,7 @@ class InvoiceController extends Controller
                 'search' => $request->input('search', ''),
                 'type'   => $request->input('type', ''),
                 'status' => $request->input('status', ''),
+                'bill_category' => $request->input('bill_category', ''),
             ],
         ]);
     }
@@ -146,6 +152,7 @@ class InvoiceController extends Controller
                 'id'                     => $invoice->id,
                 'invoice_number'         => $invoice->invoice_number,
                 'proforma_number'        => $invoice->proforma_number,
+                'bill_category'          => $invoice->bill_category,
                 'type'                   => $invoice->type,
                 'status'                 => $invoice->status,
                 'billing_months'         => $invoice->billing_months,
@@ -209,14 +216,18 @@ class InvoiceController extends Controller
 
         $validated = $request->validate([
             'lease_id'               => ['required', 'exists:leases,id'],
+            'bill_category'          => ['required', 'in:lease,electricity'],
             'type'                   => ['required', 'in:proforma,invoice'],
             'submission_action'      => ['nullable', 'in:save,send'],
-            'billing_months'         => ['required', 'integer', 'in:3,4,6,12'],
+            'billing_months'         => ['nullable', 'integer', 'min:1', 'max:12'],
             'issue_date'             => ['required', 'date'],
             'due_date'               => ['required', 'date', 'after_or_equal:issue_date'],
             'period_start'           => ['required', 'date'],
-            'service_charge_rate'    => ['required', 'numeric', 'min:0', 'max:100'],
-            'withholding_tax_rate'   => ['required', 'numeric', 'min:0', 'max:100'],
+            'service_charge_rate'    => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'withholding_tax_rate'   => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'source_mix_mode'        => ['nullable', 'in:blended,source_specific'],
+            'electricity_amount'     => ['nullable', 'numeric', 'min:0.01'],
+            'electricity_description' => ['nullable', 'string', 'max:255'],
             'notes'                  => ['nullable', 'string', 'max:2000'],
             'additional_items'       => ['nullable', 'array'],
             'additional_items.*.description' => ['required_with:additional_items', 'string', 'max:255'],
@@ -226,23 +237,55 @@ class InvoiceController extends Controller
 
         $submissionAction = $validated['submission_action'] ?? 'save';
         $shouldSend = $submissionAction === 'send';
+        $billCategory = $validated['bill_category'];
+
+        if ($billCategory === Invoice::CATEGORY_LEASE) {
+            if (!in_array((int) ($validated['billing_months'] ?? 0), [3, 4, 6, 12], true)) {
+                return back()->withErrors(['billing_months' => 'Lease billing period must be 3, 4, 6, or 12 months.']);
+            }
+            if (!isset($validated['service_charge_rate'])) {
+                return back()->withErrors(['service_charge_rate' => 'Service charge rate is required for lease bills.']);
+            }
+            if (!isset($validated['withholding_tax_rate'])) {
+                return back()->withErrors(['withholding_tax_rate' => 'Withholding tax rate is required for lease bills.']);
+            }
+        }
+
+        if ($billCategory === Invoice::CATEGORY_ELECTRICITY && !isset($validated['electricity_amount'])) {
+            return back()->withErrors(['electricity_amount' => 'Electricity amount is required for electricity bills.']);
+        }
 
         // Verify lease belongs to building and is active
         $lease = $building->leases()->where('status', 'active')->findOrFail($validated['lease_id']);
 
-        $billingMonths = (int) $validated['billing_months'];
-        $periodStart   = Carbon::parse($validated['period_start']);
+        $billingMonths = $billCategory === Invoice::CATEGORY_ELECTRICITY
+            ? 1
+            : (int) $validated['billing_months'];
+
+        $periodStart = Carbon::parse($validated['period_start']);
+        $periodEnd = null;
 
         // For the first billing document on a fit-out lease, always start the period at fit-out start.
         $isFirstLeaseDocument = !Invoice::where('building_id', $building->id)
             ->where('lease_id', $lease->id)
+            ->where('bill_category', $billCategory)
             ->exists();
 
-        if ($isFirstLeaseDocument && $lease->fitout_applicable && $lease->fitout_start_date) {
+        if (
+            $billCategory === Invoice::CATEGORY_LEASE &&
+            $isFirstLeaseDocument &&
+            $lease->fitout_applicable &&
+            $lease->fitout_start_date
+        ) {
             $periodStart = $lease->fitout_start_date->copy()->startOfDay();
         }
 
-        $periodEnd     = $periodStart->copy()->addMonths($billingMonths)->subDay();
+        if ($billCategory === Invoice::CATEGORY_ELECTRICITY) {
+            $periodStart = $periodStart->copy()->startOfMonth();
+            $periodEnd = $periodStart->copy()->endOfMonth();
+        } else {
+            $periodEnd = $periodStart->copy()->addMonths($billingMonths)->subDay();
+        }
 
 
         // --- Fit-out and rental period split logic ---
@@ -250,13 +293,99 @@ class InvoiceController extends Controller
         $fitoutStart = $lease->fitout_start_date;
         $fitoutEnd = $lease->fitout_end_date;
 
-        $invoice = DB::transaction(function () use ($validated, $building, $lease, $user, $billingMonths, $periodStart, $periodEnd, $fitoutApplicable, $fitoutStart, $fitoutEnd, $shouldSend) {
+        $invoice = DB::transaction(function () use ($validated, $building, $lease, $user, $billCategory, $billingMonths, $periodStart, $periodEnd, $fitoutApplicable, $fitoutStart, $fitoutEnd, $shouldSend) {
             $type = $validated['type'];
+
+            if ($billCategory === Invoice::CATEGORY_ELECTRICITY) {
+                $electricityAmount = (float) $validated['electricity_amount'];
+
+                $invoice = $this->createWithUniqueNumbers($building->id, $type, [
+                    'building_id'          => $building->id,
+                    'lease_id'             => $lease->id,
+                    'tenant_id'            => $lease->tenant_id,
+                    'bill_category'        => Invoice::CATEGORY_ELECTRICITY,
+                    'billing_cycle'        => 'monthly_electricity',
+                    'source_mix_mode'      => $validated['source_mix_mode'] ?? 'blended',
+                    'type'                 => $type,
+                    'status'               => $shouldSend ? Invoice::STATUS_SENT : Invoice::STATUS_DRAFT,
+                    'billing_months'       => 1,
+                    'issue_date'           => $validated['issue_date'],
+                    'due_date'             => $validated['due_date'],
+                    'period_start'         => $periodStart,
+                    'period_end'           => $periodEnd,
+                    'rent_amount'          => $electricityAmount,
+                    'service_charge_rate'  => 0,
+                    'service_charge_amount' => 0,
+                    'withholding_tax_rate' => 0,
+                    'withholding_tax_amount' => 0,
+                    'currency'             => $lease->rent_currency ?? 'TZS',
+                    'notes'                => $validated['notes'] ?? null,
+                    'created_by'           => $user->id,
+                ], Invoice::CATEGORY_ELECTRICITY);
+
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'description' => $validated['electricity_description'] ?? "Electricity charge ({$periodStart->format('M Y')})",
+                    'quantity' => 1,
+                    'unit_price' => $electricityAmount,
+                    'amount' => $electricityAmount,
+                    'item_type' => 'rent',
+                ]);
+
+                $invoice->recalculate();
+                $invoice->save();
+
+                $totalAmount = (float) $invoice->total_amount;
+                if ($totalAmount > 0) {
+                    $ar = Account::firstWhere('code', '1020') ?? Account::firstWhere('name', 'Accounts Receivable');
+                    $electricityIncome = Account::firstWhere('code', '4030') ?? Account::firstWhere('name', 'Electricity Income');
+
+                    if (!$ar) {
+                        $ar = Account::create(['code' => '1020', 'name' => 'Accounts Receivable', 'type' => 'asset']);
+                    }
+
+                    if (!$electricityIncome) {
+                        $electricityIncome = Account::create(['code' => '4030', 'name' => 'Electricity Income', 'type' => 'revenue']);
+                    }
+
+                    $txn = Transaction::create([
+                        'date' => $invoice->issue_date->format('Y-m-d'),
+                        'description' => "Electricity {$type} #" . ($invoice->isProforma() ? ($invoice->proforma_number ?: $invoice->invoice_number) : $invoice->invoice_number),
+                        'reference_type' => 'invoice',
+                        'reference_id' => $invoice->id,
+                        'bill_category' => Invoice::CATEGORY_ELECTRICITY,
+                        'created_by' => $invoice->created_by,
+                    ]);
+
+                    TransactionEntry::create([
+                        'transaction_id' => $txn->id,
+                        'account_id' => $ar->id,
+                        'bill_category' => Invoice::CATEGORY_ELECTRICITY,
+                        'debit' => $totalAmount,
+                        'credit' => 0,
+                        'description' => 'Electricity receivable',
+                    ]);
+
+                    TransactionEntry::create([
+                        'transaction_id' => $txn->id,
+                        'account_id' => $electricityIncome->id,
+                        'bill_category' => Invoice::CATEGORY_ELECTRICITY,
+                        'debit' => 0,
+                        'credit' => $totalAmount,
+                        'description' => 'Electricity income',
+                    ]);
+                }
+
+                return $invoice;
+            }
 
             $invoice = $this->createWithUniqueNumbers($building->id, $type, [
                 'building_id'         => $building->id,
                 'lease_id'            => $lease->id,
                 'tenant_id'           => $lease->tenant_id,
+                'bill_category'       => Invoice::CATEGORY_LEASE,
+                'billing_cycle'       => 'lease_cycle',
+                'source_mix_mode'     => null,
                 'type'                => $type,
                 'status'              => $shouldSend ? Invoice::STATUS_SENT : Invoice::STATUS_DRAFT,
                 'billing_months'      => $billingMonths,
@@ -271,7 +400,7 @@ class InvoiceController extends Controller
                 'currency'            => $lease->rent_currency ?? 'TZS',
                 'notes'               => $validated['notes'] ?? null,
                 'created_by'          => $user->id,
-            ]);
+            ], Invoice::CATEGORY_LEASE);
 
             $serviceChargeRate = $validated['service_charge_rate'];
             $monthlyRent = (float) $lease->monthly_rent;
@@ -421,6 +550,7 @@ class InvoiceController extends Controller
                     'description' => "Invoice #{$invoice->invoice_number}",
                     'reference_type' => 'invoice',
                     'reference_id' => $invoice->id,
+                    'bill_category' => Invoice::CATEGORY_LEASE,
                     'created_by' => $invoice->created_by,
                 ]);
 
@@ -428,6 +558,7 @@ class InvoiceController extends Controller
                 TransactionEntry::create([
                     'transaction_id' => $txn->id,
                     'account_id' => $ar->id,
+                    'bill_category' => Invoice::CATEGORY_LEASE,
                     'debit' => $totalAmount,
                     'credit' => 0,
                     'description' => 'Invoice receivable',
@@ -438,6 +569,7 @@ class InvoiceController extends Controller
                     TransactionEntry::create([
                         'transaction_id' => $txn->id,
                         'account_id' => $rentIncome->id,
+                        'bill_category' => Invoice::CATEGORY_LEASE,
                         'debit' => 0,
                         'credit' => (float) $invoice->rent_amount,
                         'description' => 'Rental income',
@@ -449,6 +581,7 @@ class InvoiceController extends Controller
                     TransactionEntry::create([
                         'transaction_id' => $txn->id,
                         'account_id' => $serviceIncome->id,
+                        'bill_category' => Invoice::CATEGORY_LEASE,
                         'debit' => 0,
                         'credit' => (float) $invoice->service_charge_amount,
                         'description' => 'Service charges',
@@ -488,14 +621,14 @@ class InvoiceController extends Controller
     /**
      * Create invoice/proforma records with collision-safe numbering.
      */
-    private function createWithUniqueNumbers(int $buildingId, string $type, array $attributes): Invoice
+    private function createWithUniqueNumbers(int $buildingId, string $type, array $attributes, string $billCategory = Invoice::CATEGORY_LEASE): Invoice
     {
         for ($attempt = 0; $attempt < 5; $attempt++) {
             if ($type === Invoice::TYPE_PROFORMA) {
-                $attributes['proforma_number'] = Invoice::nextNumber($buildingId, Invoice::TYPE_PROFORMA);
+                $attributes['proforma_number'] = Invoice::nextNumber($buildingId, Invoice::TYPE_PROFORMA, $billCategory);
                 $attributes['invoice_number'] = 'PF-TEMP-' . Str::uuid();
             } else {
-                $attributes['invoice_number'] = Invoice::nextNumber($buildingId, Invoice::TYPE_INVOICE);
+                $attributes['invoice_number'] = Invoice::nextNumber($buildingId, Invoice::TYPE_INVOICE, $billCategory);
                 $attributes['proforma_number'] = null;
             }
 
@@ -575,7 +708,7 @@ class InvoiceController extends Controller
         abort_unless($invoice->building_id === $building->id, 403);
         abort_unless($invoice->isProforma(), 422, 'Only proformas can be converted.');
 
-        $invoiceNumber = Invoice::nextNumber($building->id, Invoice::TYPE_INVOICE);
+        $invoiceNumber = Invoice::nextNumber($building->id, Invoice::TYPE_INVOICE, $invoice->bill_category ?? Invoice::CATEGORY_LEASE);
 
         $invoice->update([
             'type'           => Invoice::TYPE_INVOICE,
@@ -704,6 +837,7 @@ class InvoiceController extends Controller
                     'description' => "Payment for Invoice #{$invoice->invoice_number}",
                     'reference_type' => 'payment',
                     'reference_id' => null,
+                    'bill_category' => $invoice->bill_category ?? Invoice::CATEGORY_LEASE,
                     'created_by' => $user->id,
                 ]);
 
@@ -711,6 +845,7 @@ class InvoiceController extends Controller
                 TransactionEntry::create([
                     'transaction_id' => $txn->id,
                     'account_id' => $cash->id,
+                    'bill_category' => $invoice->bill_category ?? Invoice::CATEGORY_LEASE,
                     'debit' => $paymentAmount,
                     'credit' => 0,
                     'description' => 'Payment received',
@@ -720,6 +855,7 @@ class InvoiceController extends Controller
                 TransactionEntry::create([
                     'transaction_id' => $txn->id,
                     'account_id' => $ar->id,
+                    'bill_category' => $invoice->bill_category ?? Invoice::CATEGORY_LEASE,
                     'debit' => 0,
                     'credit' => $paymentAmount,
                     'description' => "Settled invoice {$invoice->invoice_number}",

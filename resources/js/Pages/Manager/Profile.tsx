@@ -55,7 +55,7 @@ export default function ManagerProfile({
     return (
         <ManagerLayout
             title="My Profile"
-            activeNav="settings"
+            activeNav="profile"
             user={{ name: user.name, email: user.email, role: user.role }}
             building={building}
         >

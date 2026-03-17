@@ -87,6 +87,12 @@ const navItems = [
         id: "invoices",
         href: "/manager/invoices",
     },
+    {
+        label: "Electricity",
+        icon: Invoice01Icon,
+        id: "electricity",
+        href: "/manager/electricity",
+    },
     // Accounting Submenu
     {
         label: "Accounting",
